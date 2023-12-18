@@ -223,6 +223,7 @@ func main() {
 	HashRateStatistic()
 
 	var wg sync.WaitGroup
+	var lastBlock uint64
 	for _, w := range wallets {
 		wNonce, err := w.GetPendingNonce()
 		WNonce.Store(wNonce)
@@ -256,10 +257,25 @@ func main() {
 				WNonce.Add(1)
 				rawTx, _ := w.GetRawTx(tx)
 				if mintConfig.SendTx {
-					err := client.SendTransaction(context.Background(), tx)
-					if err != nil {
-						fmt.Println("send transaction failed:", err)
+					for {
+						block, err := client.HeaderByNumber(context.Background(), nil)
+						if err != nil {
+							fmt.Println("send transaction failed:", err)
+							goto wait
+						}
+						if currBlock := block.Number.Uint64(); currBlock != lastBlock {
+							fmt.Println("currBlock:", currBlock, "lastBlock:", lastBlock)
+							lastBlock = currBlock
+							err := client.SendTransaction(context.Background(), tx)
+							if err != nil {
+								fmt.Println("send transaction failed:", err)
+							}
+							break
+						}
+					wait:
+						time.Sleep(time.Millisecond * 200)
 					}
+
 				}
 				matchData := MatchedTx{
 					WalletAddr: w.Address,
