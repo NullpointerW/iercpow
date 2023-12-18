@@ -76,7 +76,7 @@ func newWorker(index int, findHashChan chan *types.Transaction, imNonce uint64, 
 }
 
 func (w *Worker) startMine() {
-	fmt.Println("start mine nonce", w.nonce)
+	fmt.Println("worker", w.index, "start mine: nonce", w.nonce)
 	fixedStr := fmt.Sprintf("data:application/json,{\"p\":\"%s\",\"op\":\"mint\",\"tick\":\"%s\",\"amt\":\"%s\",", w.m.P, w.m.Tick, w.m.Amt)
 	value := big.NewInt(0)
 
@@ -213,7 +213,7 @@ func main() {
 	for idx, pkey := range mintConfig.PrivateKeys {
 		w, err := NewWallet(pkey, client, chainId)
 		if err != nil {
-			fmt.Println("Create wallet error with index", idx, "pkey", "err", err)
+			fmt.Println("Create wallet error with index", idx, "pkey", pkey, "err", err)
 			continue
 		}
 		wallets = append(wallets, w)
@@ -222,26 +222,18 @@ func main() {
 
 	HashRateStatistic()
 
-	var wg sync.WaitGroup
-	for _, w := range wallets {
-		wNonce, err := w.GetPendingNonce()
-		WNonce.Store(wNonce)
-		if err != nil {
-			fmt.Println("Wallet", w.Address, "get nonce error")
-			continue
-		}
-
+	for i := 0; i < mintConfig.Count; i++ {
 		timestamp := time.Now().UnixMilli()
-		for i := 0; i < mintConfig.Count; i++ {
+		var wg sync.WaitGroup
+		for _, w := range wallets {
+			WNonce.Store(w.Nonce)
 			onHashFindChn := make(chan *types.Transaction)
 			if mc, ok := matchedCount[w.Address.String()]; ok {
 				if mc.count >= i {
-					//wNonce = mc.nonce + 1
-					WNonce.Store(mc.nonce + 1)
 					continue
 				}
+				WNonce.Store(mc.nonce + 1)
 			}
-
 			wg.Add(mintConfig.Threads)
 			ctx, cancelFunc := context.WithCancel(context.Background())
 			imNonce := WNonce.Load()
@@ -250,10 +242,9 @@ func main() {
 				worker := newWorker(t, onHashFindChn, imNonce, &WNonce, start, uint64(mintConfig.Threads), mintConfig, w, &wg, ctx)
 				go worker.startMine()
 			}
-
 			select {
 			case tx := <-onHashFindChn:
-				WNonce.Add(1)
+				w.Nonce = WNonce.Add(1)
 				rawTx, _ := w.GetRawTx(tx)
 				if mintConfig.SendTx {
 					err := client.SendTransaction(context.Background(), tx)

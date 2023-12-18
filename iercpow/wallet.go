@@ -17,6 +17,7 @@ type Wallet struct {
 	pkey    *ecdsa.PrivateKey
 	Address common.Address
 	ChainID *big.Int
+	Nonce   uint64
 }
 
 func NewWallet(privateKeyHex string, client *ethclient.Client, chainId int64) (*Wallet, error) {
@@ -30,7 +31,8 @@ func NewWallet(privateKeyHex string, client *ethclient.Client, chainId int64) (*
 		return nil, err
 	}
 	wallet.Address = crypto.PubkeyToAddress(wallet.pkey.PublicKey)
-	return &wallet, nil
+	wallet.Nonce, err = wallet.GetPendingNonce()
+	return &wallet, err
 }
 
 func (w *Wallet) GetPendingNonce() (uint64, error) {
