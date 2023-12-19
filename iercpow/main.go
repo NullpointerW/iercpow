@@ -230,9 +230,9 @@ func main() {
 			onHashFindChn := make(chan *types.Transaction)
 			if mc, ok := matchedCount[w.Address.String()]; ok {
 				if mc.count >= i {
+					w.Nonce = mc.nonce + 1
 					continue
 				}
-				WNonce.Store(mc.nonce + 1)
 			}
 			wg.Add(mintConfig.Threads)
 			ctx, cancelFunc := context.WithCancel(context.Background())
