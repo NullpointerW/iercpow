@@ -221,12 +221,11 @@ func main() {
 			nonce := uint64(0)
 			if mc, ok := matchedCount[w.Address.String()]; ok {
 				if mc.count >= i {
+					w.Nonce.Store(mc.nonce + 1)
 					continue
 				}
-				nonce = mc.nonce + 1
-			} else {
-				nonce = w.Nonce.Load()
 			}
+			nonce = w.Nonce.Load()
 			go Term(nonce, mintConfig.Threads, timestamp, mintConfig, w, client, onConfirmTxChan)
 			workerNum++
 		}
