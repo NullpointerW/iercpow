@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"math/big"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -17,7 +18,7 @@ type Wallet struct {
 	pkey    *ecdsa.PrivateKey
 	Address common.Address
 	ChainID *big.Int
-	Nonce   uint64
+	Nonce   *atomic.Uint64
 }
 
 func NewWallet(privateKeyHex string, client *ethclient.Client, chainId int64) (*Wallet, error) {
@@ -31,7 +32,12 @@ func NewWallet(privateKeyHex string, client *ethclient.Client, chainId int64) (*
 		return nil, err
 	}
 	wallet.Address = crypto.PubkeyToAddress(wallet.pkey.PublicKey)
-	wallet.Nonce, err = wallet.GetPendingNonce()
+	n, err := wallet.GetPendingNonce()
+	if err == nil {
+		var an atomic.Uint64
+		an.Store(n)
+		wallet.Nonce = &an
+	}
 	return &wallet, err
 }
 
