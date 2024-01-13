@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"os"
 	"strings"
@@ -71,9 +72,15 @@ func newWorker(index int, findHashChan chan *types.Transaction, imNonce uint64, 
 	}
 }
 
-func (w *Worker) startMine() {
+func (w *Worker) startMine(client *ethclient.Client) {
 	fmt.Println("worker", w.index, "start mine: nonce", w.nonce)
-	fixedStr := fmt.Sprintf("data:application/json,{\"p\":\"%s\",\"op\":\"mint\",\"tick\":\"%s\",\"amt\":\"%s\",", w.m.P, w.m.Tick, w.m.Amt)
+	header, err := client.HeaderByNumber(context.Background(), nil)
+	if err != nil {
+		log.Fatalln("获取区块高度失败", err)
+	}
+	subtractValue := big.NewInt(100)
+	header.Number.Sub(header.Number, subtractValue)
+	fixedStr := fmt.Sprintf("data:application/json,{\"p\":\"%s\",\"op\":\"mint\",\"tick\":\"%s\",\"block\":\"%s\",", w.m.P, w.m.Tick, header.Number.String())
 	value := big.NewInt(0)
 
 	innerTx := &types.DynamicFeeTx{
@@ -251,7 +258,7 @@ func Term(nonce uint64, workers int, timestamp int64, mintConfig *MintConfig, w 
 	for t := 0; t < workers; t++ {
 		start := uint64(timestamp) + uint64(t)*LEN_FOR_THREADS
 		worker := newWorker(t, onHashFindChn, imNonce, &WNonce, start, uint64(workers), mintConfig, w, ctx)
-		go worker.startMine()
+		go worker.startMine(client)
 	}
 	select {
 	case tx := <-onHashFindChn:
