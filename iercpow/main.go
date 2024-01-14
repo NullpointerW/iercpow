@@ -21,6 +21,7 @@ var (
 	LEN_FOR_THREADS uint64 = 100000
 	GlobalCount     atomic.Uint64
 	LastCount       uint64 = 0
+	BlockHigh       atomic.Value
 )
 
 type MatchedTx struct {
@@ -72,15 +73,9 @@ func newWorker(index int, findHashChan chan *types.Transaction, imNonce uint64, 
 	}
 }
 
-func (w *Worker) startMine(client *ethclient.Client) {
+func (w *Worker) startMine() {
 	fmt.Println("worker", w.index, "start mine: nonce", w.nonce)
-	header, err := client.HeaderByNumber(context.Background(), nil)
-	if err != nil {
-		log.Fatalln("获取区块高度失败", err)
-	}
-	subtractValue := big.NewInt(100)
-	header.Number.Sub(header.Number, subtractValue)
-	fixedStr := fmt.Sprintf("data:application/json,{\"p\":\"%s\",\"op\":\"mint\",\"tick\":\"%s\",\"block\":\"%s\",", w.m.P, w.m.Tick, header.Number.String())
+
 	value := big.NewInt(0)
 
 	innerTx := &types.DynamicFeeTx{
@@ -92,7 +87,7 @@ func (w *Worker) startMine(client *ethclient.Client) {
 		To:        &ADDR_ZERO,
 		Value:     value,
 	}
-
+	fixedStr := fmt.Sprintf("data:application/json,{\"p\":\"%s\",\"op\":\"mint\",\"tick\":\"%s\",", w.m.P, w.m.Tick)
 	var t uint64 = 0
 	for ; ; t++ {
 		start := w.start + w.threads*t*LEN_FOR_THREADS
@@ -105,14 +100,14 @@ func (w *Worker) startMine(client *ethclient.Client) {
 			default:
 			}
 			GlobalCount.Add(1)
-			inputStr := fmt.Sprintf("%s\"nonce\":\"%d\"}", fixedStr, nonce)
+			inputStr := fmt.Sprintf("%s\"block\":\"%s\",\"nonce\":\"%d\"}", fixedStr, BlockHigh.Load().(string), nonce)
+			fmt.Println(inputStr)
 			innerTx.Data = []byte(inputStr)
 			tx := types.NewTx(innerTx)
 			signTx, err := w.w.SignTx(tx)
 			if err != nil {
 				panic(err)
 			}
-			//fmt.Println("hash:", signTx.Hash().String())
 			if strings.HasPrefix(signTx.Hash().String(), w.m.HashPre) {
 				fmt.Println("find matched hash", signTx.Hash().Hex(), "exit", w.index)
 				w.findHashChan <- signTx
@@ -138,6 +133,29 @@ func HashRateStatistic() {
 				count := GlobalCount.Load() - LastCount
 				LastCount = GlobalCount.Load()
 				fmt.Printf("Hash count %d, Hashrate: %dH/s\n", count, count/5)
+			}
+		}
+	}()
+}
+
+func BlockHighStatistic(client *ethclient.Client) {
+	header, err := client.HeaderByNumber(context.Background(), nil)
+	if err != nil {
+		log.Fatalln("获取区块高度失败", err)
+	}
+	BlockHigh.Store(header.Number.String())
+	tick := time.NewTicker(14 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-tick.C:
+				header, err = client.HeaderByNumber(context.Background(), nil)
+				if err != nil {
+					fmt.Println("获取区块高度失败", err)
+				} else {
+					fmt.Println("当前区块高度:", header.Number.String())
+					BlockHigh.Store(header.Number.String())
+				}
 			}
 		}
 	}()
@@ -220,6 +238,7 @@ func main() {
 		fmt.Println("Add wallet:", w.Address)
 	}
 	HashRateStatistic()
+	BlockHighStatistic(client)
 	for i := 0; i < mintConfig.Count; i++ {
 		timestamp := time.Now().UnixMilli()
 		onConfirmTxChan := make(chan MatchedTx)
@@ -258,7 +277,7 @@ func Term(nonce uint64, workers int, timestamp int64, mintConfig *MintConfig, w 
 	for t := 0; t < workers; t++ {
 		start := uint64(timestamp) + uint64(t)*LEN_FOR_THREADS
 		worker := newWorker(t, onHashFindChn, imNonce, &WNonce, start, uint64(workers), mintConfig, w, ctx)
-		go worker.startMine(client)
+		go worker.startMine()
 	}
 	select {
 	case tx := <-onHashFindChn:
