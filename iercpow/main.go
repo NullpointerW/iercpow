@@ -78,16 +78,21 @@ func (w *Worker) startMine() {
 
 	value := big.NewInt(0)
 
+	// float gas
+	gwei := big.NewInt(1000000000)                                             // 1 Gwei
+	tip := new(big.Float).Mul(big.NewFloat(0.21), new(big.Float).SetInt(gwei)) // 0.21 Gwei
+	gasTipCap, _ := tip.Int(nil)                                               // 将浮点数转换为整数
+
 	innerTx := &types.DynamicFeeTx{
 		ChainID:   w.w.ChainID,
 		Nonce:     w.nonce,
-		GasTipCap: new(big.Int).Mul(big.NewInt(1000000000), big.NewInt(10)),  // maxPriorityFeePerGas 10
-		GasFeeCap: new(big.Int).Mul(big.NewInt(1000000000), big.NewInt(100)), // max Fee 100
-		Gas:       30000,
+		GasTipCap: gasTipCap,                                                // maxPriorityFeePerGas 10
+		GasFeeCap: new(big.Int).Mul(big.NewInt(1000000000), big.NewInt(70)), // max Fee 100
+		Gas:       23100,
 		To:        &ADDR_ZERO,
 		Value:     value,
 	}
-	fixedStr := fmt.Sprintf("data:application/json,{\"p\":\"%s\",\"op\":\"mint\",\"tick\":\"%s\",", w.m.P, w.m.Tick)
+	fixedStr := fmt.Sprintf("data:application/json,{\"p\":\"%s\",\"op\":\"mint\",\"tick\":\"%s\",\"use_point\":\"12000\",", w.m.P, w.m.Tick)
 	var t uint64 = 0
 	for ; ; t++ {
 		start := w.start + w.threads*t*LEN_FOR_THREADS
@@ -101,7 +106,7 @@ func (w *Worker) startMine() {
 			}
 			GlobalCount.Add(1)
 			inputStr := fmt.Sprintf("%s\"block\":\"%s\",\"nonce\":\"%d\"}", fixedStr, BlockHigh.Load().(string), nonce)
-			fmt.Println(inputStr)
+			//fmt.Println(inputStr)
 			innerTx.Data = []byte(inputStr)
 			tx := types.NewTx(innerTx)
 			signTx, err := w.w.SignTx(tx)
@@ -143,7 +148,7 @@ func BlockHighStatistic(client *ethclient.Client) {
 	if err != nil {
 		log.Fatalln("获取区块高度失败", err)
 	}
-	BlockHigh.Store(header.Number.String())
+	BlockHigh.Store((header.Number.Add(header.Number, big.NewInt(2))).String())
 	tick := time.NewTicker(14 * time.Second)
 	go func() {
 		for {
